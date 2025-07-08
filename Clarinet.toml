@@ -9,6 +9,10 @@ requirements = []
 path = 'contracts/contract-pausing-with-roles.clar'
 clarity_version = 3
 epoch = 3.1
+
+
+
+
 [repl.analysis]
 passes = ['check_checker']
 
