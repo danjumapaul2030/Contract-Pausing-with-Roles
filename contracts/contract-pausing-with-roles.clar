@@ -1,4 +1,4 @@
-(define-constant CONTRACT_OWNER tx-sender)
+(define-data-var contract-owner principal tx-sender)
 (define-constant ERR_UNAUTHORIZED (err u100))
 (define-constant ERR_CONTRACT_PAUSED (err u101))
 (define-constant ERR_ALREADY_PAUSED (err u102))
@@ -8,19 +8,37 @@
 (define-constant ERR_CANNOT_REMOVE_OWNER (err u106))
 (define-constant ERR_INSUFFICIENT_BALANCE (err u107))
 (define-constant ERR_TRANSFER_FAILED (err u108))
+(
+  define-constant ERR_OWNER_SAME (err u109)
+)
 
 (define-data-var contract-paused bool false)
 (define-data-var total-deposits uint u0)
+(
+  define-data-var owner-candidate (optional principal) none
+)
 
 (define-map admins principal bool)
 (define-map user-balances principal uint)
 (define-map pause-history uint {admin: principal, action: (string-ascii 10), timestamp: uint})
 (define-data-var pause-history-nonce uint u0)
 
-(map-set admins CONTRACT_OWNER true)
+(map-set admins (var-get contract-owner) true)
 
 (define-read-only (is-contract-paused)
   (var-get contract-paused)
+)
+
+(define-read-only (get-owner)
+  (var-get contract-owner)
+)
+
+(define-read-only (get-owner-candidate)
+  (var-get owner-candidate)
+)
+
+(define-read-only (is-owner (user principal))
+  (is-eq user (var-get contract-owner))
 )
 
 (define-read-only (is-admin (user principal))
@@ -70,10 +88,38 @@
 (define-public (remove-admin (admin-to-remove principal))
   (begin
     (asserts! (is-authorized-admin tx-sender) ERR_UNAUTHORIZED)
-    (asserts! (not (is-eq admin-to-remove CONTRACT_OWNER)) ERR_CANNOT_REMOVE_OWNER)
+    (asserts! (not (is-eq admin-to-remove (var-get contract-owner))) ERR_CANNOT_REMOVE_OWNER)
     (asserts! (is-admin admin-to-remove) ERR_NOT_ADMIN)
     (map-delete admins admin-to-remove)
     (ok true)
+  )
+)
+
+(define-public (propose-owner (new-owner principal))
+  (begin
+    (asserts! (is-owner tx-sender) ERR_UNAUTHORIZED)
+    (asserts! (not (is-eq new-owner (var-get contract-owner))) ERR_OWNER_SAME)
+    (var-set owner-candidate (some new-owner))
+    (ok true)
+  )
+)
+
+(define-public (accept-ownership)
+  (match (var-get owner-candidate)
+    candidate (let (
+      (current-owner (var-get contract-owner))
+      (new-owner candidate)
+    )
+      (begin
+        (asserts! (is-eq tx-sender new-owner) ERR_UNAUTHORIZED)
+        (var-set contract-owner new-owner)
+        (var-set owner-candidate none)
+        (map-set admins new-owner true)
+        (map-delete admins current-owner)
+        (ok true)
+      )
+    )
+    ERR_UNAUTHORIZED
   )
 )
 
@@ -182,7 +228,7 @@
   {
     paused: (var-get contract-paused),
     total-deposits: (var-get total-deposits),
-    owner: CONTRACT_OWNER,
+    owner: (var-get contract-owner),
     pause-history-count: (var-get pause-history-nonce)
   }
 )
